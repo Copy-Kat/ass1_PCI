@@ -1,6 +1,5 @@
 from enum import Enum, auto
 #import os
-from enum import Enum
 from typing import Union
 
 import pygame as pg
@@ -8,30 +7,33 @@ from pygame.math import Vector2
 from vi import Agent, Simulation
 from vi.config import Config, dataclass, deserialize
 
+# All possible states of the agent
 class States(Enum):
     WANDERING = auto(),
     JOIN = auto(),
     STILL = auto(),
     LEAVE = auto()
 
+# Paramters to tweak, used by both configs
 @deserialize
 @dataclass
 class Params(Config):
 
     join_timer: int = 10
-
     still_timer: int = 10
-
     leave_timer: int = 10
+    random_change_angle_chance: float = 0.25            
+    image_rotation: bool = True
+    movement_speed: int = 1
+    seed: int = 1
 
+# 2 Config for 1/2 sites. Could be optimised but thats for later
 @deserialize
 @dataclass
 class SingleSiteConfig(Params):
 
     site_center: Vector2 = Vector2(350, 350)
-
     site_color: tuple[int, int, int] =  (152, 152, 152)
-
     site_radius: int = 100
 
 @deserialize
@@ -39,15 +41,14 @@ class SingleSiteConfig(Params):
 class DoubleSiteConfig(Params):
 
     site_centers: tuple[Vector2, Vector2] = (Vector2(350, 350), Vector2(250, 250))
-
     site_color: tuple[int, int, int] =  (152, 152, 152)
-
     site_radius: tuple[int, int] = (100, 50)
+
 
 class Roach(Agent):
     config: Union[SingleSiteConfig, DoubleSiteConfig]
     site: int = -1
-    state: States = States.WANDERING 
+    state: States = States.WANDERING # init state as WANDERING
     join_timer: int
     still_timer: int
     leave_timer: int
@@ -56,74 +57,87 @@ class Roach(Agent):
 
         self.there_is_no_escape()
 
-        self.check_site()
+        self.check_site() # check if agent in any sites
 
-        self.save_data("site", self.site)
+        self.save_data("site", self.site) # save data, could comment out
 
         # ------Wandering------
 
         if self.state == States.WANDERING:
 
-            if self.on_site():
+            if self.on_site(): # if in a site then attempt to change state
 
                 if self.join():
                     self.pos += self.move
                     self.state = States.JOIN
-                    self.join_timer = self.config.join_timer
+                    self.join_timer = self.config.join_timer # start JOIN timer
                     return
-
+            
+            # else continue random walk - code copy from source
             prng = self.shared.prng_move
 
             should_change_angle = prng.random()
 
-            if 0.25 > should_change_angle:
+            if self.config.random_change_angle_chance > should_change_angle:
                 self.move.rotate(prng.uniform(-10, 10))
 
             self.pos += self.move
 
             return
 
-        elif self.state == States.JOIN:
+        # ------Join------
+
+        elif self.state == States.JOIN: # if in JOIN then just walk
             
             if self.join_timer > 0:
                 self.pos += self.move
                 self.join_timer -= 1
                 return
             
+            # stop and change to STILL when timer run out
             self.state = States.STILL
-            self.still_timer = self.config.still_timer
+            self.still_timer = self.config.still_timer # start STILL timer
             return
 
-        elif self.state == States.STILL:
+        # ------Still------
+
+        elif self.state == States.STILL: 
             
+            # count down timer until next check
             if self.still_timer > 0:
                 self.still_timer -= 1
                 return
 
-            if self.leave():
+            if self.leave(): # attempt to leave
                 self.pos += self.move
                 self.state = States.LEAVE
-                self.leave_timer = self.config.leave_timer
+                self.leave_timer = self.config.leave_timer # start LEAVE timer
                 return
-
+            
+            # else reset STILL timer
             self.still_timer = self.config.still_timer
 
-        elif self.state == States.LEAVE:
+        # ------Leave------
 
+        elif self.state == States.LEAVE:
+            
+            # walk until timer reach 0, take no consideration of any factors
             if self.leave_timer > 0:
                 self.pos += self.move
                 self.leave_timer -=1
                 return
 
-            self.state = States.WANDERING
+            self.state = States.WANDERING # change to WANDERING
             return
-
-    def join(self) -> bool:
+    
+    # determine if agent want to join/leave or not
+    def join(self) -> bool: 
         return True
 
     def leave(self) -> bool:
         return True
-
+    
+    # overrides on default function as we are using a different system
     def on_site(self) -> bool:
         return self.site != -1
 
@@ -143,7 +157,7 @@ class Roach(Agent):
             return
         
         self.site = -1
-        
+
 
 class RoachSim(Simulation):
     config: Union[SingleSiteConfig, DoubleSiteConfig]
@@ -189,19 +203,11 @@ class RoachSim(Simulation):
                 print(f"FPS: {current_fps:.1f}")
 
 
-config = SingleSiteConfig(
-            image_rotation=True,
-            movement_speed=1,
-            seed=1,
-        )
+config = SingleSiteConfig()
 
-config1 = DoubleSiteConfig(
-            image_rotation=True,
-            movement_speed=1,
-            seed=1,
-            duration=0
-        )
-x, y = config.window.as_tuple()
+config1 = DoubleSiteConfig()
+
+#x, y = config.window.as_tuple()
 
 df = RoachSim(config1).batch_spawn_agents(100, Roach, images=["images/bird.png"]).run().snapshots
 
