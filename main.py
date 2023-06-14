@@ -1,5 +1,6 @@
-#from enum import Enum, auto
+from enum import Enum, auto
 #import os
+from enum import Enum
 from typing import Union
 
 import pygame as pg
@@ -7,11 +8,25 @@ from pygame.math import Vector2
 from vi import Agent, Simulation
 from vi.config import Config, dataclass, deserialize
 
+class States(Enum):
+    WANDERING = auto(),
+    JOIN = auto(),
+    STILL = auto(),
+    LEAVE = auto()
+
 @deserialize
 @dataclass
-class SingleSiteConfig(Config):
+class Params(Config):
 
-    frame_count: int = 0
+    join_timer: int = 10
+
+    still_timer: int = 10
+
+    leave_timer: int = 10
+
+@deserialize
+@dataclass
+class SingleSiteConfig(Params):
 
     site_center: Vector2 = Vector2(350, 350)
 
@@ -21,9 +36,7 @@ class SingleSiteConfig(Config):
 
 @deserialize
 @dataclass
-class DoubleSiteConfig(Config):
-
-    frame_count: int = 0
+class DoubleSiteConfig(Params):
 
     site_centers: tuple[Vector2, Vector2] = (Vector2(350, 350), Vector2(250, 250))
 
@@ -31,20 +44,109 @@ class DoubleSiteConfig(Config):
 
     site_radius: tuple[int, int] = (100, 50)
 
-
 class Roach(Agent):
-    config: SingleSiteConfig
+    config: Union[SingleSiteConfig, DoubleSiteConfig]
+    site: int = -1
+    state: States = States.WANDERING 
+    join_timer: int
+    still_timer: int
+    leave_timer: int
 
     def change_position(self):
 
         self.there_is_no_escape()
 
-        self.pos += self.move
+        self.check_site()
 
+        self.save_data("site", self.site)
+
+        # ------Wandering------
+
+        if self.state == States.WANDERING:
+
+            if self.on_site():
+
+                if self.join():
+                    self.pos += self.move
+                    self.state = States.JOIN
+                    self.join_timer = self.config.join_timer
+                    return
+
+            prng = self.shared.prng_move
+
+            should_change_angle = prng.random()
+
+            if 0.25 > should_change_angle:
+                self.move.rotate(prng.uniform(-10, 10))
+
+            self.pos += self.move
+
+            return
+
+        elif self.state == States.JOIN:
+            
+            if self.join_timer > 0:
+                self.pos += self.move
+                self.join_timer -= 1
+                return
+            
+            self.state = States.STILL
+            self.still_timer = self.config.still_timer
+            return
+
+        elif self.state == States.STILL:
+            
+            if self.still_timer > 0:
+                self.still_timer -= 1
+                return
+
+            if self.leave():
+                self.pos += self.move
+                self.state = States.LEAVE
+                self.leave_timer = self.config.leave_timer
+                return
+
+            self.still_timer = self.config.still_timer
+
+        elif self.state == States.LEAVE:
+
+            if self.leave_timer > 0:
+                self.pos += self.move
+                self.leave_timer -=1
+                return
+
+            self.state = States.WANDERING
+            return
+
+    def join(self) -> bool:
+        return True
+
+    def leave(self) -> bool:
+        return True
+
+    def on_site(self) -> bool:
+        return self.site != -1
+
+    def on_site_id(self) -> int:
+        return self.site
+
+    def check_site(self):
+
+        if isinstance(self.config, DoubleSiteConfig):
+            for idx, center in enumerate(self.config.site_centers):
+                if self.pos.distance_to(center) < self.config.site_radius[idx]:
+                    self.site = idx
+                    return
+
+        elif self.pos.distance_to(self.config.site_center) < self.config.site_radius:
+            self.site = 0
+            return
+        
+        self.site = -1
+        
 
 class RoachSim(Simulation):
     config: Union[SingleSiteConfig, DoubleSiteConfig]
-    _sites: list[Site] = []
 
     def before_update(self):
         super().before_update()
@@ -54,8 +156,8 @@ class RoachSim(Simulation):
                 if event.key == pg.K_q:
                     self._running = False
 
-        self.config.frame_count += 1
-        print("Frame :", self.config.frame_count)
+        
+        print("Frame :", self.shared.counter)
 
 
     def after_update(self):
@@ -86,6 +188,7 @@ class RoachSim(Simulation):
             if self.config.print_fps:
                 print(f"FPS: {current_fps:.1f}")
 
+
 config = SingleSiteConfig(
             image_rotation=True,
             movement_speed=1,
@@ -96,6 +199,7 @@ config1 = DoubleSiteConfig(
             image_rotation=True,
             movement_speed=1,
             seed=1,
+            duration=0
         )
 x, y = config.window.as_tuple()
 
