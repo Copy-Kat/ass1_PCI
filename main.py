@@ -1,53 +1,39 @@
+#from enum import Enum, auto
+#import os
+from typing import Union
 
-from collections.abc import Container
-from enum import Enum, auto
-import os
-
-from typing import TYPE_CHECKING, List
-
-from vi._static import _StaticSprite
-from pygame.surface import Surface
 import pygame as pg
 from pygame.math import Vector2
 from vi import Agent, Simulation
 from vi.config import Config, dataclass, deserialize
 
-if TYPE_CHECKING:
-    from typing_extensions import Self
-
-
-
 @deserialize
 @dataclass
 class SingleSiteConfig(Config):
 
-    site_color: tuple[int, int, int] = (152, 158, 153) 
+    frame_count: int = 0
 
-    frame_count: int = 0 
+    site_center: Vector2 = Vector2(350, 350)
 
-    site_center: tuple[int, int] = (350, 350)
+    site_color: tuple[int, int, int] =  (152, 152, 152)
 
+    site_radius: int = 100
 
+@deserialize
+@dataclass
+class DoubleSiteConfig(Config):
 
+    frame_count: int = 0
 
-def sum_vec2(list: list[Vector2]) -> Vector2:
-    result = Vector2(0, 0)
-    for vec in list:
-        result += vec
-    return result
+    site_centers: tuple[Vector2, Vector2] = (Vector2(350, 350), Vector2(250, 250))
 
-class Site():
+    site_color: tuple[int, int, int] =  (152, 152, 152)
 
-    def __init__(self, x: int, y: int, color: tuple[int, int, int], radius: int):
+    site_radius: tuple[int, int] = (100, 50)
 
-        self.center = Vector2(x, y)
-        self.color = color
-        self.radius = radius
-    
 
 class Roach(Agent):
     config: SingleSiteConfig
-
 
     def change_position(self):
 
@@ -57,8 +43,8 @@ class Roach(Agent):
 
 
 class RoachSim(Simulation):
-    config: SingleSiteConfig
-    _sites: List[Site] = []
+    config: Union[SingleSiteConfig, DoubleSiteConfig]
+    _sites: list[Site] = []
 
     def before_update(self):
         super().before_update()
@@ -73,10 +59,14 @@ class RoachSim(Simulation):
 
 
     def after_update(self):
-        # Draw everything to the screen
+        # Draw verything to the screen
 
-        for site in self._sites:
-            pg.draw.circle(self._screen, site.color, site.center, site.radius)
+        if type(self.config) is SingleSiteConfig:
+            pg.draw.circle(self._screen, self.config.site_color, self.config.site_center, self.config.site_radius)
+
+        if type(self.config) is DoubleSiteConfig:
+            for idx, center in enumerate(self.config.site_centers):
+                pg.draw.circle(self._screen, self.config.site_color, center, self.config.site_radius[idx])
 
         self._all.draw(self._screen)
 
@@ -99,13 +89,17 @@ class RoachSim(Simulation):
 config = SingleSiteConfig(
             image_rotation=True,
             movement_speed=1,
-            radius=50,
             seed=1,
         )
 
+config1 = DoubleSiteConfig(
+            image_rotation=True,
+            movement_speed=1,
+            seed=1,
+        )
 x, y = config.window.as_tuple()
 
-df = RoachSim(config).batch_spawn_agents(100, Roach, images=["images/bird.png"]).run().snapshots
+df = RoachSim(config1).batch_spawn_agents(100, Roach, images=["images/bird.png"]).run().snapshots
 
 file_name = "data.csv"
 
