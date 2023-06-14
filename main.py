@@ -2,6 +2,13 @@ from enum import Enum, auto
 #import os
 from typing import Union
 
+# use numpy for another rng genrator
+# doc said movement use a decoupled rng
+# use random.random may affect the rng of movement
+# haven't tested the theory but add here just in case
+import numpy as np
+from pygame.gfxdraw import hline, vline
+
 import pygame as pg
 from pygame.math import Vector2
 from vi import Agent, Simulation
@@ -20,12 +27,14 @@ class States(Enum):
 class Params(Config):
 
     join_timer: int = 10
-    still_timer: int = 10
+    still_timer: int = 30
     leave_timer: int = 10
     random_change_angle_chance: float = 0.25            
     image_rotation: bool = True
     movement_speed: int = 1
     seed: int = 1
+    visualise_chunks: bool = True
+    radius: int = 40
 
 # 2 Config for 1/2 sites. Could be optimised but thats for later
 @deserialize
@@ -40,10 +49,9 @@ class SingleSiteConfig(Params):
 @dataclass
 class DoubleSiteConfig(Params):
 
-    site_centers: tuple[Vector2, Vector2] = (Vector2(350, 350), Vector2(250, 250))
+    site_centers: tuple[Vector2, Vector2] = (Vector2(175, 350), Vector2(575, 350))
     site_color: tuple[int, int, int] =  (152, 152, 152)
-    site_radius: tuple[int, int] = (100, 50)
-
+    site_radius: tuple[int, int] = (100, 100)
 
 class Roach(Agent):
     config: Union[SingleSiteConfig, DoubleSiteConfig]
@@ -131,11 +139,20 @@ class Roach(Agent):
             return
     
     # determine if agent want to join/leave or not
-    def join(self) -> bool: 
-        return True
+    def join(self) -> bool: #TODO 
+        p = 0.5 + 0.1 * self.in_proximity_performance().count()
+        
+        check = np.random.default_rng().uniform(0, 1)
 
-    def leave(self) -> bool:
-        return True
+        return p > check
+        
+
+    def leave(self) -> bool: #TODO
+        p = 0.5 - 0.1 * self.in_proximity_performance().count()
+        
+        check = np.random.default_rng().uniform(0, 1)
+
+        return p > check
     
     # overrides on default function as we are using a different system
     def on_site(self) -> bool:
@@ -169,10 +186,11 @@ class RoachSim(Simulation):
             if event.type == pg.KEYDOWN:
                 if event.key == pg.K_q:
                     self._running = False
+                if event.key == pg.KEYUP:
+                    self.config.fps_limit = 120
 
         
-        print("Frame :", self.shared.counter)
-
+        #print("Frame :", self.shared.counter)
 
     def after_update(self):
         # Draw verything to the screen
@@ -202,22 +220,39 @@ class RoachSim(Simulation):
             if self.config.print_fps:
                 print(f"FPS: {current_fps:.1f}")
 
+    def __visualise_chunks(self):
+        """Visualise the proximity chunks by drawing their borders."""
 
-config = SingleSiteConfig()
+        colour = pg.Color(255, 255, 255, 122)
+        chunk_size = self._proximity.chunk_size
 
-config1 = DoubleSiteConfig()
+        width, height = self.config.window.as_tuple()
 
-#x, y = config.window.as_tuple()
+        for x in range(chunk_size, width, chunk_size):
+            vline(self._screen, x, 0, height, colour)
 
-df = RoachSim(config1).batch_spawn_agents(100, Roach, images=["images/bird.png"]).run().snapshots
+        for y in range(chunk_size, height, chunk_size):
+            hline(self._screen, 0, width, y, colour)
 
-file_name = "data.csv"
+def main():
+    #config = SingleSiteConfig()
 
-print(df)
+    config1 = DoubleSiteConfig()
 
-#if not os.path.exists(file_name):
-#    with open(file_name, 'w'): pass
+    df = RoachSim(config1).batch_spawn_agents(50, Roach, images=["images/bird.png"]).run().snapshots
 
-# df.write_csv(file_name, separator=",")
+    file_name = "data.csv"
 
-print("Output: ", file_name)
+    print(df)
+
+    #if not os.path.exists(file_name):
+    #    with open(file_name, 'w'): pass
+
+    # df.write_csv(file_name, separator=",")
+
+    print("Output: ", file_name)
+
+if __name__ == "__main__":
+    main()
+
+
